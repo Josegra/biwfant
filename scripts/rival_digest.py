@@ -31,6 +31,7 @@ from loguru import logger
 
 from config import settings
 from api.client import BiwengerClient
+from engine.rival_intel import build_rival_budget_message
 from bot.telegram_bot import send_message
 
 LOOKBACK_HOURS = float(os.environ.get("DIGEST_LOOKBACK_HOURS", "26"))
@@ -133,12 +134,17 @@ def main() -> None:
             lines = lines[:20]
             break
 
-    if not lines:
+    if lines:
+        send_message("📰 *Actividad de la liga (últimas 24h)*\n\n" + "\n".join(f"• {l}" for l in lines))
+        logger.info(f"Sent digest with {len(lines)} event(s).")
+    else:
         logger.info("No recognised recent activity in the board feed.")
-        return
 
-    send_message("📰 *Actividad de la liga (últimas 24h)*\n\n" + "\n".join(f"• {l}" for l in lines))
-    logger.info(f"Sent digest with {len(lines)} event(s).")
+    try:
+        standings = client.get_standings()
+        send_message(build_rival_budget_message(standings, settings.biwenger_user_id))
+    except Exception as exc:
+        logger.warning(f"Could not send rival budget estimate: {exc}")
 
 
 if __name__ == "__main__":

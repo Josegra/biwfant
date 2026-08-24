@@ -1,7 +1,13 @@
 name: Bot Listener
 
 on:
-  workflow_dispatch:          # triggered manually or by you sending a command
+  schedule:
+    # Every 5 min, 07:00-23:00 UTC — makes Telegram commands feel "live"
+    # without needing to trigger this by hand. Repo is public, so Actions
+    # minutes are free/unlimited.
+    - cron: '*/5 7-23 * * *'
+
+  workflow_dispatch:          # manual trigger for testing / off-hours use
     inputs:
       timeout:
         description: 'Seconds to listen for commands'
@@ -31,7 +37,7 @@ jobs:
           BIWENGER_USER_ID:    '11538845'
           TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
-          LISTENER_TIMEOUT:    ${{ inputs.timeout || '120' }}
+          LISTENER_TIMEOUT:    ${{ inputs.timeout || '90' }}
           DRY_RUN:             'false'
           SSL_VERIFY:          'true'
         run: python scripts/bot_listener.py
