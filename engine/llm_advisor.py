@@ -85,8 +85,8 @@ def _get_client():
             base_url=settings.llm_base_url or None,
             http_client=http_client,
         )
-    except ImportError:
-        logger.warning("openai package not installed — LLM features disabled")
+    except Exception as exc:
+        logger.warning(f"LLM client unavailable ({exc!r}) — LLM features disabled")
         return None
 
 

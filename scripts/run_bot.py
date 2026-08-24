@@ -117,8 +117,9 @@ def main() -> None:
 
     # Status summary
     llm_status = "✅ IA activa" if settings.llm_enabled else "⚠️ Sin IA"
+    team_name = squad_raw.get("name") or "Mi equipo"
     status_lines = [
-        f"🤖 *Vampiros United — ciclo del bot*",
+        f"🤖 *{team_name} — ciclo del bot*",
         f"💰 Balance: €{balance:,.0f}",
         f"📊 Puntos: {total_points}",
         f"👥 Plantilla: {len(players)} jugadores",
@@ -286,11 +287,6 @@ def main() -> None:
 
     logger.info("✅ Bot cycle complete.")
     send_message("🏁 Ciclo completado. ¡Hasta la próxima!")
-
-
-if __name__ == "__main__":
-    main()
-
 
 
 if __name__ == "__main__":
