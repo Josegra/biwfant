@@ -77,8 +77,44 @@ def resolve_chat_id() -> str:
 
 # ------------------------------------------------------------------ public API
 
+_TG_MAX_LEN = 4096
+
+
+def _chunk_text(text: str, limit: int = _TG_MAX_LEN) -> list[str]:
+    """Split text into <=limit chunks, breaking on line boundaries where possible."""
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    buf = ""
+    for line in text.split("\n"):
+        candidate = f"{buf}\n{line}" if buf else line
+        if len(candidate) > limit:
+            if buf:
+                chunks.append(buf)
+            # a single line longer than the limit gets hard-sliced
+            buf = line if len(line) <= limit else line[:limit]
+            while len(buf) > limit:
+                chunks.append(buf[:limit])
+                buf = buf[limit:]
+        else:
+            buf = candidate
+    if buf:
+        chunks.append(buf)
+    return chunks
+
 
 def send_message(text: str, reply_markup: dict | None = None) -> dict:
+    chunks = _chunk_text(text)
+    last_result: dict = {}
+    for i, chunk in enumerate(chunks):
+        # Only the last chunk carries the confirmation keyboard, if any
+        markup = reply_markup if i == len(chunks) - 1 else None
+        last_result = _send_single(chunk, markup)
+    return last_result
+
+
+def _send_single(text: str, reply_markup: dict | None = None) -> dict:
     chat_id = resolve_chat_id()
     kwargs: dict = {
         "chat_id": chat_id,
