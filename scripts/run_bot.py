@@ -31,7 +31,7 @@ from engine.optimizer import optimize_lineup
 from engine.market_scanner import scan_market, find_sell_candidates
 from engine.scorer import score_player
 from engine.llm_advisor import advise_transfers, narrate_lineup, summarise_market_scan
-from actions.lineup import get_best_lineup, build_lineup_message
+from actions.lineup import get_best_lineup, build_lineup_message, _missing_positions_reason
 from actions.transfers import build_transfers_message, build_market_overview_message
 from bot.telegram_bot import (
     send_message,
@@ -173,7 +173,8 @@ def main() -> None:
                 f"({predicted_pts:.1f} pts esperados)"
             )
     else:
-        send_message("⚠️ No se pudo calcular alineación óptima.")
+        reason = _missing_positions_reason([p for p in players if p.is_available])
+        send_message(f"⚠️ No se pudo calcular alineación óptima. {reason}")
 
     # ------------------------------------------------------------- market
     logger.info("Scanning market…")

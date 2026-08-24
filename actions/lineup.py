@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 from loguru import logger
 
 from api.models import Player
 from engine.optimizer import optimize_lineup
 from engine.scorer import score_player
+
+_POS_NAME = {1: "porteros", 2: "defensas", 3: "centrocampistas", 4: "delanteros"}
+# Minimum needed in each position across all 7 valid formations
+_MIN_REQUIRED = {1: 1, 2: 3, 3: 3, 4: 1}
+
+
+def _missing_positions_reason(available: list[Player]) -> str:
+    counts = Counter(p.position for p in available)
+    missing = [
+        f"{_MIN_REQUIRED[pos] - counts.get(pos, 0)} {_POS_NAME[pos]}"
+        for pos in _MIN_REQUIRED
+        if counts.get(pos, 0) < _MIN_REQUIRED[pos]
+    ]
+    if missing:
+        return f"Te faltan al menos: {', '.join(missing)} disponibles."
+    return "No hay ninguna combinación de formación válida con la plantilla disponible."
 
 
 def get_best_lineup(
@@ -20,13 +38,24 @@ def get_best_lineup(
     fixture_map: optional dict[team_slug → difficulty] from engine.fixtures.
     """
     available = [p for p in players if p.is_available]
+    counts = Counter(p.position for p in available)
+    logger.info(
+        f"Available by position — GK:{counts.get(1,0)} DEF:{counts.get(2,0)} "
+        f"MID:{counts.get(3,0)} FWD:{counts.get(4,0)} (total {len(available)}/{len(players)})"
+    )
     if len(available) < 11:
         logger.warning(
-            f"Only {len(available)} available players — cannot build XI"
+            f"Only {len(available)} available players — cannot build XI. "
+            f"{_missing_positions_reason(available)}"
         )
         return [], current_formation, 0.0
 
-    return optimize_lineup(available, None, fixture_map)
+    starting_xi, formation, score = optimize_lineup(available, None, fixture_map)
+    if not starting_xi:
+        logger.warning(
+            f"Optimizer found no valid formation. {_missing_positions_reason(available)}"
+        )
+    return starting_xi, formation, score
 
 
 def build_lineup_message(
