@@ -82,13 +82,21 @@ def main() -> None:
         logger.info("No league board data returned.")
         return
 
+    # Log the raw shape once so we can fix _format_event() for real if it
+    # doesn't match what's expected — the board feed isn't documented.
+    logger.info(f"Board feed returned {len(events)} event(s). Sample raw event: {events[0]}")
+
     cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     lines: list[str] = []
     for e in events:
-        ts = _event_timestamp(e)
-        if ts and ts < cutoff:
+        try:
+            ts = _event_timestamp(e)
+            if ts and ts < cutoff:
+                continue
+            desc = _format_event(e)
+        except Exception as exc:
+            logger.warning(f"Skipping unparseable board event ({exc}): {e}")
             continue
-        desc = _format_event(e)
         if desc:
             lines.append(f"• {desc}")
         if len(lines) >= 20:
@@ -96,8 +104,6 @@ def main() -> None:
 
     if not lines:
         logger.info("No recognised recent activity in the board feed.")
-        if events:
-            logger.debug(f"Sample raw event for debugging: {events[0]}")
         return
 
     send_message("📰 *Actividad de la liga (últimas 24h)*\n\n" + "\n".join(lines))
