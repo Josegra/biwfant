@@ -119,7 +119,7 @@ class BiwengerClient:
         )
 
         lineup = raw.get("lineup") or {}
-        starter_players = lineup.get("players") or []
+        starter_players = [p for p in (lineup.get("players") or []) if p]
         lineup_ids: set[int] = set(lineup.get("playersID") or [])
         all_ids = [p["id"] for p in (raw.get("players") or []) if p.get("id")]
         bench_ids = [i for i in all_ids if i not in lineup_ids]
@@ -127,7 +127,9 @@ class BiwengerClient:
         bench_players = []
         for pid in bench_ids:
             try:
-                bench_players.append(self.get_player(pid))
+                player = self.get_player(pid)
+                if player:
+                    bench_players.append(player)
             except Exception as exc:
                 logger.warning(f"Could not fetch bench player {pid}: {exc}")
 
@@ -304,7 +306,7 @@ class BiwengerClient:
             return {"all_players": [], "points": 0, "balance": 0}
 
         lineup = raw.get("lineup") or {}
-        starter_players = lineup.get("players") or []
+        starter_players = [p for p in (lineup.get("players") or []) if p]
         lineup_ids: set[int] = set(lineup.get("playersID") or [])
         all_ids = [p["id"] for p in (raw.get("players") or []) if p.get("id")]
         bench_ids = [i for i in all_ids if i not in lineup_ids]
