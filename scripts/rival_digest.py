@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-Daily digest of league activity (transfers, market sales) from the
-league "board" feed — so you can see what your rivals are doing
+Daily digest of league activity (transfers, clause buyouts, market sales)
+from the league "board" feed — so you can see what your rivals are doing
 without checking the app.
 
-NOTE: the exact shape of the board feed hasn't been observed live yet
-(Biwenger doesn't document it). _format_event() is a best-effort parser
-for the commonly-seen "transfer"/"market" event shapes; if it doesn't
-recognise an event it's skipped rather than crashing the run. Check the
-logs after the first real run — if nothing gets formatted despite
-activity existing, the raw shape needs a quick look.
+Real shape observed from the API (undocumented by Biwenger):
+  {
+    "type": "transfer" | "clause" | "market",
+    "content": [
+        {"player": <id>, "from": {...} | absent, "to": {...} | absent,
+         "amount": <int>, "bids": [{"user": {...}, "amount": <int>}, ...]},
+        ...
+    ],
+    "date": <unix ts>,
+  }
+"content" is a LIST of individual operations (an event can bundle several),
+and each operation only carries the player's numeric id — not the name —
+so names are resolved via BiwengerClient.get_player() with an in-run cache.
 """
 
 from __future__ import annotations
@@ -28,39 +35,68 @@ from bot.telegram_bot import send_message
 
 LOOKBACK_HOURS = float(os.environ.get("DIGEST_LOOKBACK_HOURS", "26"))
 
+_player_name_cache: dict[int, str] = {}
+
+
+def _player_name(client: BiwengerClient, player_id: int | None) -> str:
+    if player_id is None:
+        return "?"
+    if player_id not in _player_name_cache:
+        try:
+            _player_name_cache[player_id] = client.get_player(player_id).get("name", f"#{player_id}")
+        except Exception:
+            _player_name_cache[player_id] = f"#{player_id}"
+    return _player_name_cache[player_id]
+
 
 def _event_timestamp(e: dict) -> datetime | None:
     ts = e.get("date") or e.get("createdAt") or e.get("created")
-    if ts is None:
+    if not isinstance(ts, (int, float)):
         return None
     try:
-        if isinstance(ts, (int, float)):
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        return datetime.fromtimestamp(ts, tz=timezone.utc)
     except Exception:
-        pass
-    return None
+        return None
 
 
-def _format_event(e: dict) -> str | None:
-    etype = e.get("type", "")
-    c = e.get("content") or e
+def _format_item(client: BiwengerClient, etype: str, item: dict) -> str | None:
+    player = _player_name(client, item.get("player"))
+    from_u = (item.get("from") or {}).get("name")
+    to_u = (item.get("to") or {}).get("name")
+    amount = item.get("amount", 0)
 
-    if etype == "transfer":
-        player = (c.get("player") or {}).get("name", "?")
-        to_u = (c.get("to") or {}).get("name", "?")
-        from_u = (c.get("from") or {}).get("name")
-        amount = c.get("amount", 0)
-        if from_u:
-            return f"🔁 *{to_u}* fichó a *{player}* de *{from_u}* por €{amount/1e6:.2f}M"
-        return f"🛒 *{to_u}* fichó a *{player}* por €{amount/1e6:.2f}M (mercado)"
+    if etype == "clause":
+        if from_u and to_u:
+            return f"💸 *{to_u}* activó la cláusula de *{player}* (de {from_u}) por €{amount/1e6:.2f}M"
+        return f"💸 Cláusula activada por *{player}* — €{amount/1e6:.2f}M"
 
     if etype == "market":
-        player = (c.get("player") or {}).get("name", "?")
-        seller = (c.get("user") or {}).get("name", "?")
-        price = c.get("price", 0)
-        return f"🏷 *{seller}* puso en venta a *{player}* por €{price/1e6:.2f}M"
+        if to_u:
+            return f"🏷 *{to_u}* ganó a *{player}* en el mercado por €{amount/1e6:.2f}M"
+        return None  # unsold lot, not interesting
 
+    # "transfer" (and anything else with from/to/amount)
+    if from_u and to_u:
+        return f"🔁 *{to_u}* fichó a *{player}* de *{from_u}* por €{amount/1e6:.2f}M"
+    if to_u:
+        return f"🛒 *{to_u}* fichó a *{player}* por €{amount/1e6:.2f}M (mercado)"
+    if from_u:
+        return f"📤 *{from_u}* soltó a *{player}* por €{amount/1e6:.2f}M"
     return None
+
+
+def _format_event(client: BiwengerClient, e: dict) -> list[str]:
+    etype = e.get("type", "")
+    content = e.get("content")
+    items = content if isinstance(content, list) else [content] if isinstance(content, dict) else []
+    out: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        desc = _format_item(client, etype, item)
+        if desc:
+            out.append(desc)
+    return out
 
 
 def main() -> None:
@@ -82,10 +118,6 @@ def main() -> None:
         logger.info("No league board data returned.")
         return
 
-    # Log the raw shape once so we can fix _format_event() for real if it
-    # doesn't match what's expected — the board feed isn't documented.
-    logger.info(f"Board feed returned {len(events)} event(s). Sample raw event: {events[0]}")
-
     cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     lines: list[str] = []
     for e in events:
@@ -93,20 +125,19 @@ def main() -> None:
             ts = _event_timestamp(e)
             if ts and ts < cutoff:
                 continue
-            desc = _format_event(e)
+            lines.extend(_format_event(client, e))
         except Exception as exc:
             logger.warning(f"Skipping unparseable board event ({exc}): {e}")
             continue
-        if desc:
-            lines.append(f"• {desc}")
         if len(lines) >= 20:
+            lines = lines[:20]
             break
 
     if not lines:
         logger.info("No recognised recent activity in the board feed.")
         return
 
-    send_message("📰 *Actividad de la liga (últimas 24h)*\n\n" + "\n".join(lines))
+    send_message("📰 *Actividad de la liga (últimas 24h)*\n\n" + "\n".join(f"• {l}" for l in lines))
     logger.info(f"Sent digest with {len(lines)} event(s).")
 
 
