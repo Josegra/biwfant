@@ -32,6 +32,8 @@ def _api(method: str, **kwargs) -> dict:
         verify=settings.ssl_verify,
         timeout=35,
     )
+    if not r.ok:
+        logger.warning(f"Telegram API {method} error body: {r.text}")
     r.raise_for_status()
     return r.json()
 
@@ -88,8 +90,13 @@ def send_message(text: str, reply_markup: dict | None = None) -> dict:
     try:
         return _api("sendMessage", **kwargs)
     except Exception as exc:
-        logger.error(f"sendMessage failed: {exc}")
-        return {}
+        logger.warning(f"sendMessage with Markdown failed ({exc}), retrying as plain text")
+        try:
+            kwargs.pop("parse_mode", None)
+            return _api("sendMessage", **kwargs)
+        except Exception as exc2:
+            logger.error(f"sendMessage failed: {exc2}")
+            return {}
 
 
 def send_with_confirmation(
