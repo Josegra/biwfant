@@ -15,6 +15,23 @@ train `engine/xgb_trainer.py` and drop in the trained model here.
 
 from api.models import Player
 
+_calibration_cache: dict[int, float] = {}
+
+
+def _calibration(position: int) -> float:
+    """
+    Self-calibration multiplier learned from data.store.jornada_results
+    (populated by scripts/weekly_report.py after each jornada). Cached
+    per-process since it only changes once new results are recorded.
+    """
+    if position not in _calibration_cache:
+        try:
+            from data import store
+            _calibration_cache[position] = store.get_calibration_factor(position)
+        except Exception:
+            _calibration_cache[position] = 1.0
+    return _calibration_cache[position]
+
 
 def score_player(player: Player, fixture_difficulty: float = 1.0) -> float:
     """
@@ -52,7 +69,7 @@ def score_player(player: Player, fixture_difficulty: float = 1.0) -> float:
         + 0.20 * (minutes_pct / 10)  # normalise to ~same scale as avg pts
     )
 
-    return round(base * fixture_difficulty * injury_penalty, 3)
+    return round(base * fixture_difficulty * injury_penalty * _calibration(player.position), 3)
 
 
 def value_efficiency(player: Player, fixture_difficulty: float = 1.0) -> float:

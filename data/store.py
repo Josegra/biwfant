@@ -127,6 +127,17 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_ms_player_jornada
                 ON market_snapshots(player_id, jornada);
         """)
+        # Migrations for columns added after the initial release —
+        # CREATE TABLE IF NOT EXISTS above doesn't alter an existing table.
+        for stmt in (
+            "ALTER TABLE watchlist ADD COLUMN auto_bid_max_price INTEGER",
+            "ALTER TABLE watchlist ADD COLUMN auto_bid_enabled INTEGER DEFAULT 0",
+        ):
+            try:
+                db.execute(stmt)
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise
 
 
 def save_player_snapshot(player_data: dict, jornada: int | None = None) -> None:
@@ -384,22 +395,26 @@ def add_to_watchlist(
     price_at_add: int | None = None,
     reason: str = "",
     score_threshold: float = 7.0,
+    auto_bid_max_price: int | None = None,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    auto_bid_enabled = int(auto_bid_max_price is not None)
     with _conn() as db:
         db.execute(
             """
             INSERT INTO watchlist
                 (player_id, player_name, position, team_name, price_at_add,
-                 added_at, reason, score_threshold)
-            VALUES (?,?,?,?,?,?,?,?)
+                 added_at, reason, score_threshold, auto_bid_max_price, auto_bid_enabled)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(player_id) DO UPDATE SET
                 reason=excluded.reason,
                 price_at_add=excluded.price_at_add,
-                added_at=excluded.added_at
+                added_at=excluded.added_at,
+                auto_bid_max_price=excluded.auto_bid_max_price,
+                auto_bid_enabled=excluded.auto_bid_enabled
             """,
             (player_id, player_name, position, team_name, price_at_add,
-             now, reason, score_threshold),
+             now, reason, score_threshold, auto_bid_max_price, auto_bid_enabled),
         )
 
 
@@ -416,7 +431,7 @@ def get_watchlist() -> list[dict]:
             """
             SELECT player_id, player_name, position, team_name, price_at_add,
                    added_at, reason, alert_on_market, alert_on_price_drop,
-                   alert_on_score, score_threshold
+                   alert_on_score, score_threshold, auto_bid_max_price, auto_bid_enabled
             FROM watchlist ORDER BY added_at DESC
             """,
         ).fetchall()
@@ -459,6 +474,33 @@ def get_standings() -> list[dict]:
             "SELECT * FROM standings_cache ORDER BY position ASC"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_calibration_factor(position: int | None = None, min_samples: int = 15) -> float:
+    """
+    Self-calibration: ratio of actual/predicted points from past jornadas,
+    used to correct engine.scorer's heuristic score. Returns 1.0 (no
+    correction) until enough history exists, and clamps to [0.5, 1.5] to
+    avoid overreacting to a handful of noisy early samples.
+    """
+    with _conn() as db:
+        q = (
+            "SELECT predicted_pts, actual_pts FROM jornada_results "
+            "WHERE predicted_pts IS NOT NULL AND actual_pts IS NOT NULL AND predicted_pts > 0"
+        )
+        params: list = []
+        if position is not None:
+            q += " AND position = ?"
+            params.append(position)
+        rows = db.execute(q, params).fetchall()
+
+    if len(rows) < min_samples:
+        return 1.0
+
+    import statistics
+    ratios = [r["actual_pts"] / r["predicted_pts"] for r in rows]
+    factor = statistics.mean(ratios)
+    return max(0.5, min(1.5, factor))
 
 
 def lineup_confirmed_today() -> bool:

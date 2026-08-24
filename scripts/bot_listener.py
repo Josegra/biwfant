@@ -41,11 +41,25 @@ HELP_TEXT = (
     "/squad — Tu plantilla actual con puntuaciones\n"
     "/market — Top 5 oportunidades en el mercado\n"
     "/watchlist — Tu lista de seguimiento\n"
-    "/watch <nombre> — Añadir jugador al seguimiento\n"
+    "/watch <nombre> [precio_max] — Añadir jugador al seguimiento. "
+    "Con precio_max (ej. 45M o 45000000) el bot pujará automáticamente "
+    "si aparece en el mercado a ese precio o menos (te pide confirmación por Telegram)\n"
     "/unwatch <nombre> — Eliminar del seguimiento\n"
     "/status — Balance, posición y próximo cierre\n"
+    "/rivales — Presupuesto estimado de tus rivales\n"
     "/help — Este mensaje"
 )
+
+
+def _parse_price(token: str) -> int | None:
+    """Parse '45M', '45m', '45000000' → euros. Returns None if not a price."""
+    token = token.strip().upper().replace("€", "").replace(",", "")
+    try:
+        if token.endswith("M"):
+            return int(float(token[:-1]) * 1_000_000)
+        return int(token)
+    except ValueError:
+        return None
 
 
 def _fuzzy_find_player(name_query: str, client: BiwengerClient) -> dict | None:
@@ -159,30 +173,54 @@ def handle_command(cmd: str, args: str, client: BiwengerClient, fixture_map: dic
         except Exception as exc:
             return f"⚠️ Error: {exc}"
 
+    elif cmd == "/rivales":
+        try:
+            from engine.rival_intel import build_rival_budget_message
+            standings = client.get_standings()
+            return build_rival_budget_message(standings, settings.biwenger_user_id)
+        except Exception as exc:
+            return f"⚠️ Error: {exc}"
+
     elif cmd == "/watchlist":
         wl = store.get_watchlist()
         if not wl:
             return "📋 Tu watchlist está vacía. Usa /watch <nombre> para añadir jugadores."
         lines = ["📋 *Tu watchlist*\n"]
         for entry in wl:
+            bid_line = ""
+            if entry.get("auto_bid_enabled") and entry.get("auto_bid_max_price"):
+                bid_line = f"\n  🎯 Puja auto. hasta €{entry['auto_bid_max_price']/1e6:.2f}M"
             lines.append(
                 f"• *{entry['player_name']}* — {entry.get('reason') or 'sin nota'}\n"
-                f"  Añadido: {entry['added_at'][:10]}"
+                f"  Añadido: {entry['added_at'][:10]}{bid_line}"
             )
         return "\n".join(lines)
 
     elif cmd == "/watch":
         if not args:
-            return "Uso: /watch <nombre del jugador>"
-        raw = _fuzzy_find_player(args, client)
+            return "Uso: /watch <nombre del jugador> [precio_max]"
+        tokens = args.split()
+        auto_bid_max = _parse_price(tokens[-1]) if len(tokens) > 1 else None
+        name_query = " ".join(tokens[:-1]) if auto_bid_max is not None else args
+        raw = _fuzzy_find_player(name_query, client)
         if not raw:
-            return f"❌ No encontré ningún jugador que coincida con *{args}*.\nPrueba con el apellido."
+            return f"❌ No encontré ningún jugador que coincida con *{name_query}*.\nPrueba con el apellido."
         pid = raw.get("id")
-        name = raw.get("name", args)
+        name = raw.get("name", name_query)
         pos = raw.get("position", 3)
         team = (raw.get("team") or {}).get("name")
         price = raw.get("price", 0)
-        store.add_to_watchlist(pid, name, pos, team, price, reason=f"añadido via /watch")
+        store.add_to_watchlist(
+            pid, name, pos, team, price,
+            reason="añadido via /watch",
+            auto_bid_max_price=auto_bid_max,
+        )
+        if auto_bid_max is not None:
+            return (
+                f"✅ *{name}* añadido a tu watchlist con puja automática.\n"
+                f"Si aparece en el mercado por ≤ €{auto_bid_max/1e6:.2f}M te pediré "
+                f"confirmación por Telegram antes de pujar."
+            )
         return (
             f"✅ *{name}* añadido a tu watchlist.\n"
             f"Te avisaré si aparece en el mercado, baja de precio o supera 7 pts."

@@ -1,0 +1,33 @@
+name: Rival Digest
+
+on:
+  schedule:
+    - cron: '0 7 * * *'     # Daily 07:00 UTC
+
+  workflow_dispatch:
+
+jobs:
+  rival-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Send rival activity digest
+        env:
+          BIWENGER_EMAIL:      ${{ secrets.BIWENGER_EMAIL }}
+          BIWENGER_PASSWORD:   ${{ secrets.BIWENGER_PASSWORD }}
+          BIWENGER_LEAGUE_ID:  '1652151'
+          BIWENGER_USER_ID:    '11538845'
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          SSL_VERIFY:          'true'
+        run: python scripts/rival_digest.py

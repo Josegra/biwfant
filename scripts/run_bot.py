@@ -31,7 +31,12 @@ from engine.optimizer import optimize_lineup
 from engine.market_scanner import scan_market, find_sell_candidates
 from engine.scorer import score_player
 from engine.llm_advisor import advise_transfers, narrate_lineup, summarise_market_scan
-from actions.lineup import get_best_lineup, build_lineup_message, _missing_positions_reason
+from actions.lineup import (
+    get_best_lineup,
+    build_lineup_message,
+    get_missing_position_ids,
+    _missing_positions_reason,
+)
 from actions.transfers import build_transfers_message, build_market_overview_message
 from bot.telegram_bot import (
     send_message,
@@ -172,8 +177,11 @@ def main() -> None:
                 f"✅ Alineación *{best_formation}* aplicada "
                 f"({predicted_pts:.1f} pts esperados)"
             )
-    else:
-        reason = _missing_positions_reason([p for p in players if p.is_available])
+    missing_position_ids: list[int] = []
+    if not starting_xi:
+        available_now = [p for p in players if p.is_available]
+        missing_position_ids = get_missing_position_ids(available_now)
+        reason = _missing_positions_reason(available_now)
         send_message(f"⚠️ No se pudo calcular alineación óptima. {reason}")
 
     # ------------------------------------------------------------- market
@@ -197,6 +205,21 @@ def main() -> None:
             market_raw, offers_raw, my_squad_ids, player_map
         )
         send_message(market_overview_msg)
+
+        # If lineup failed earlier due to a short position, suggest fixes from the market
+        if missing_position_ids:
+            fix_candidates = [
+                o for o in opportunities if o["player"].position in missing_position_ids
+            ][:3]
+            if fix_candidates:
+                fix_lines = ["🩹 *Para completar tu alineación, mira estos fichajes:*\n"]
+                for o in fix_candidates:
+                    p = o["player"]
+                    fix_lines.append(
+                        f"• *{p.name}* ({p.position_name}) — "
+                        f"€{o['market_price']/1e6:.2f}M | {o['predicted_points']:.1f}pts previstos"
+                    )
+                send_message("\n".join(fix_lines))
 
         # Save market snapshots
         for opp in opportunities[:10]:

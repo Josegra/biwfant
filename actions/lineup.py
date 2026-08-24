@@ -15,6 +15,12 @@ _POS_NAME = {1: "porteros", 2: "defensas", 3: "centrocampistas", 4: "delanteros"
 _MIN_REQUIRED = {1: 1, 2: 3, 3: 3, 4: 1}
 
 
+def get_missing_position_ids(available: list[Player]) -> list[int]:
+    """Position ids (1=GK..4=FWD) short of the minimum needed by any formation."""
+    counts = Counter(p.position for p in available)
+    return [pos for pos in _MIN_REQUIRED if counts.get(pos, 0) < _MIN_REQUIRED[pos]]
+
+
 def _missing_positions_reason(available: list[Player]) -> str:
     counts = Counter(p.position for p in available)
     missing = [

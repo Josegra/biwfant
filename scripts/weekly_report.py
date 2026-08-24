@@ -22,6 +22,7 @@ from api.models import Player
 from data import store
 from engine.scorer import score_player
 from engine.fixtures import refresh_fixtures
+from engine.dashboard import generate_markdown_report
 from bot.telegram_bot import send_message
 
 
@@ -226,8 +227,9 @@ def main() -> None:
         )
         return
 
+    team_name = squad_raw.get("name") or "Mi equipo"
     header = [
-        "📋 *Informe semanal — Vampiros United*\n",
+        f"📋 *Informe semanal — {team_name}*\n",
         f"💰 Balance: €{balance:,.0f} | 📊 Puntos totales: {total_pts}\n",
     ]
 
@@ -241,6 +243,13 @@ def main() -> None:
 
     full_report = "\n".join(header + perf_lines + acc_lines + standings_lines)
     send_message(full_report)
+
+    try:
+        generate_markdown_report()
+        logger.info("Dashboard report regenerated (data/report.md).")
+    except Exception as exc:
+        logger.warning(f"Dashboard report generation failed: {exc}")
+
     logger.info("✅ Weekly report sent.")
 
 

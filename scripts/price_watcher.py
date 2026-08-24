@@ -23,6 +23,7 @@ from config import settings
 from api.client import BiwengerClient
 from api.models import Player
 from data import store
+from bot.telegram_bot import send_message, send_with_confirmation, wait_for_callback
 
 THRESHOLD: int = int(os.environ.get("PRICE_DROP_THRESHOLD", "150000"))
 
@@ -99,6 +100,31 @@ def check_watchlist(client: BiwengerClient, my_squad_ids: set[int]) -> list[str]
         if pid in my_squad_ids:
             continue  # already own them
 
+        # Auto-bid: watchlist entry with a max price set, found in market within budget
+        if entry.get("auto_bid_enabled") and entry.get("auto_bid_max_price") and pid in market_ids:
+            sale = market_ids[pid]
+            price = sale.get("price", 0)
+            if price <= entry["auto_bid_max_price"]:
+                seller = sale.get("user") or {}
+                seller_id = seller.get("id")
+                msg = (
+                    f"🎯 *{name}* disponible por €{price/1e6:.2f}M "
+                    f"(tu máximo: €{entry['auto_bid_max_price']/1e6:.2f}M)\n¿Pujar ahora?"
+                )
+                send_with_confirmation(msg, action_id=f"buy_{pid}", action_label=f"Pujar {name}")
+                confirmed = wait_for_callback(f"buy_{pid}", timeout=300)
+                if confirmed:
+                    client.place_bid(pid, price, seller_user_id=seller_id)
+                    store.save_decision(
+                        "buy", pid, name,
+                        reasoning=f"Auto-bid watchlist (max €{entry['auto_bid_max_price']:,})",
+                        confirmed=True, executed=not settings.dry_run,
+                    )
+                    alerts.append(f"✅ Puja enviada por *{name}* — €{price/1e6:.2f}M")
+                else:
+                    alerts.append(f"⏭ Puja por *{name}* omitida o expirada")
+                continue  # don't also send the generic market alert below
+
         # Market alert
         if entry["alert_on_market"] and pid in market_ids:
             sale = market_ids[pid]
@@ -166,7 +192,6 @@ def main() -> None:
 
     lines = ["💰 *Alertas de precio y watchlist*\n"]
     lines.extend(all_alerts)
-    from bot.telegram_bot import send_message
     send_message("\n".join(lines))
     logger.info(f"Sent {len(all_alerts)} alert(s).")
 

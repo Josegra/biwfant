@@ -45,6 +45,6 @@ jobs:
         run: |
           git config user.name  "biwfant-bot"
           git config user.email "bot@biwfant"
-          git add data/biwfant.db || true
+          git add data/biwfant.db data/report.md || true
           git diff --staged --quiet || git commit -m "chore: weekly jornada results [skip ci]"
           git push || true
