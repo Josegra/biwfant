@@ -25,8 +25,8 @@ jobs:
         env:
           BIWENGER_EMAIL:      ${{ secrets.BIWENGER_EMAIL }}
           BIWENGER_PASSWORD:   ${{ secrets.BIWENGER_PASSWORD }}
-          BIWENGER_LEAGUE_ID:  '1809775'
-          BIWENGER_USER_ID:    '11444346'
+          BIWENGER_LEAGUE_ID:  '1652151'
+          BIWENGER_USER_ID:    '11538845'
           TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
           LLM_API_KEY:         ${{ secrets.LLM_API_KEY }}

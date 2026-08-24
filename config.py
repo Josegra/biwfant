@@ -9,11 +9,11 @@ class Settings(BaseSettings):
     # Biwenger
     biwenger_email: str = ""
     biwenger_password: str = ""
-    biwenger_league_id: int = 1809775
-    biwenger_user_id: int = 11444346
-    biwenger_account_id: int = 4019960
+    biwenger_league_id: int = 1652151
+    biwenger_user_id: int = 11538845
+    biwenger_account_id: int = 4037641
     biwenger_competition: str = "la-liga"
-    biwenger_score_id: int = 2
+    biwenger_score_id: int = 5
 
     # SSL — disable on corporate networks with MITM proxy
     ssl_verify: bool = False
