@@ -1,11 +1,11 @@
 # Biwfant — Historial
 
-_Actualizado: 2026-11-09 20:16 UTC_
+_Actualizado: 2026-11-16 19:55 UTC_
 
 ## Precisión del modelo
 
-- Error medio absoluto (MAE): **2.18 pts** (56 muestras)
-- Acierto de dirección: **66%**
+- Error medio absoluto (MAE): **2.15 pts** (59 muestras)
+- Acierto de dirección: **68%**
 
 ## Clasificación
 
